@@ -1,111 +1,83 @@
-# TinyRISC-V Projects
+# TinyRISC-V Processor Systems
 
-**From integer multiplication to a four-core processor system.**
+**A 32-bit processor architecture project spanning arithmetic hardware, pipelined execution, cache memory, and a four-core system.**
 
-A collection of computer architecture projects built with **Verilog/SystemVerilog**, **Python**, and **PyMTL3**. The designs explore arithmetic hardware, pipelined execution, cache organization, and on-chip communication using the TinyRV2 educational subset of RISC-V.
+Built with **Verilog/SystemVerilog · Python · PyMTL3 · pytest**
 
-Each project includes implementation source, simulation models, and tests. Baseline and alternative designs make it possible to study different architectural choices within the same framework.
+Developed by Helene and Selena Zang.
 
-## Projects
+## Overview
 
-| Project | Focus | Implementations and components |
+This repository brings together four connected hardware projects, from a standalone integer multiplier to a multicore processor with a shared banked data cache. The processor executes **TinyRV2**, an educational subset of the RISC-V instruction set.
+
+The focus is on the hardware decisions behind execution: how to handle data dependencies in a pipeline, reduce unnecessary multiplication cycles, organize cache storage, and route memory requests between cores and cache banks. The repository includes register-transfer-level (RTL) implementations, Python functional reference models, simulation drivers, and tests.
+
+## Projects and design decisions
+
+| Project | Implementation | Design question |
 | --- | --- | --- |
-| [Integer Multiplier](sim/imul/) | Iterative arithmetic and latency | Fixed-latency shift-and-add multiplier, variable-latency multiplier with zero-bit skipping, and a functional reference model |
-| [Pipelined Processor](sim/processor/) | TinyRV2 instruction execution | Five-stage baseline and alternative pipelines, data hazard handling, operand bypassing in the alternative design, ALU, immediate generation, and integer multiplication |
-| [Cache Memory](sim/cache/) | Locality and memory hierarchy | Direct-mapped baseline and two-way set-associative alternative blocking caches, write-back/refill control, and one-bank/four-bank configurations |
-| [Multicore System](sim/multicore/) | System integration and communication | Single-core and four-core systems, ring network routers, message adapters, and a shared four-bank data cache subsystem |
+| [Integer multiplier](sim/imul/) | 32-bit iterative multiplication; fixed-latency baseline and variable-latency alternative with zero-bit skipping | How can operand values reduce the work required by a shift-and-add multiplier? |
+| [Pipelined processor](sim/processor/) | Five-stage TinyRV2 pipelines, hazard control, operand bypassing, branches, loads/stores, and multiplication | When can a dependent instruction use a forwarded result, and when must the pipeline stall? |
+| [Cache memory](sim/cache/) | Direct-mapped and two-way set-associative blocking caches; 16-byte lines, dirty eviction, and refill control | How does associativity change conflict behavior and the control needed to select a cache line? |
+| [Multicore system](sim/multicore/) | Single-core and four-core integration, private instruction caches, a shared four-bank data cache, and ring-network communication | How do routing, arbitration, and backpressure coordinate access to shared memory resources? |
 
-## How the pieces fit together
+## System architecture
 
 ```mermaid
-flowchart LR
-    I[Integer multiplier] --> P[TinyRV2 processor]
-    P --> S[Single-core system]
-    C[Cache memory] --> S
-    P --> M[Four-core system]
-    C --> B[Shared banked data cache]
-    N[Ring network and message adapters] --> B
-    B --> M
+flowchart TD
+    P[Four TinyRV2 processor cores]
+    I[Private instruction caches]
+    C[Cache request and response networks]
+    D[Four shared data cache banks]
+    IM[Instruction memory network]
+    DM[Data memory network]
+    M[External memory interfaces]
+    P <--> I
+    P <--> C
+    C <--> D
+    I <--> IM
+    D <--> DM
+    IM <--> M
+    DM <--> M
 ```
 
-The processor uses the variable-latency multiplier. The integrated RTL systems use the alternative processor and cache designs. The multicore design combines four processors with private instruction caches and a shared banked data cache connected through request and response networks.
+The integrated RTL systems use the alternative processor and cache designs. Each processor includes the variable-latency multiplier. Network messages carry requests and responses between components; ready/valid handshakes allow a receiver to pause transfers when it cannot accept more work.
 
-### Integer Multiplier
+The router sends nonlocal packets clockwise around a four-node ring. Its switch uses fixed-priority arbitration. These are concrete routing and arbitration choices to inspect when considering contention and fairness.
 
-Accepts two 32-bit operands and returns the low 32 bits of their product through ready/valid streaming interfaces. `IntMulBase` implements fixed-latency iterative multiplication; `IntMulAlt` uses a priority encoder to skip runs of zero bits. `IntMulFL` provides a functional reference. The simulator includes several operand distributions for comparing cycle counts.
+## Explore the implementation
 
-### Pipelined Processor
+- **Pipeline control and forwarding:** [processor control](sim/processor/ProcAltCtrl.v) and [datapath](sim/processor/ProcAltDpath.v).
+- **Arithmetic optimization:** [variable-latency multiplier](sim/imul/IntMulAlt.v), alongside the [fixed-latency baseline](sim/imul/IntMulBase.v).
+- **Cache hit, miss, and eviction handling:** [two-way cache controller](sim/cache/CacheAltCtrl.v) and [datapath](sim/cache/CacheAltDpath.v).
+- **System integration:** [four-core top level](sim/multicore/MultiCoreSys.v), [banked data cache](sim/multicore/MultiCoreDataCache.v), and [ring network](sim/multicore/Net.v).
 
-Implements fetch, decode, execute, memory, and writeback stages. The source includes instruction encoding/assembly support, a functional processor model, RTL control/datapath modules, and instruction tests covering arithmetic, logic, shifts, branches, jumps, loads/stores, multiplication, and manager CSR communication.
+Shared Verilog components live in [`sim/vc/`](sim/vc/). [`app/`](app/) contains the runtime and C benchmarks; [`sim/processor/ubmark/`](sim/processor/ubmark/) contains assembly microbenchmarks for vector addition, complex multiplication, masked filtering, and binary search.
 
-Assembly microbenchmarks include vector addition, complex multiplication, masked filtering, and binary search. TinyRV2 is an educational instruction subset; this repository does not claim full RISC-V ISA compliance.
+## Verification and evaluation
 
-### Cache Memory
+The repository contains **49 test modules** across arithmetic, processor instructions, caches, networks, and integrated systems. Functional and RTL implementations reuse test harnesses and test cases. The suites include operand and instruction cases, dependency scenarios, and delayed source/sink or memory responses.
 
-Compares a direct-mapped cache with a two-way set-associative design. Both use 16-byte cache lines and 32-bit processor-side data messages, with control paths for hits, misses, refills, and dirty evictions. Tests exercise cache requests, conflicts, delays, and bank configurations.
+Simulation drivers expose cycle statistics, instruction statistics, cache access/miss statistics, line traces, and waveform output where supported. Baseline and alternative implementations provide a way to investigate architectural tradeoffs using the same workloads.
 
-### Multicore System
+**Current status:** Python syntax and local import/include checks passed after the folders were renamed. The simulation suites have not been rerun in this repository's current environment, and measured benchmark results are not yet published. TinyRV2 implements a subset of RISC-V.
 
-Builds on the processor and cache projects to explore integration. Components include three-port routers, a four-node ring, cache/memory message adapters, single-core and multicore functional models, and RTL system models. The source exposes instruction-commit and cache access/miss signals for simulation statistics.
+## Run a simulation
 
-## Repository layout
-
-```text
-tinyriscv-projects/
-├── README.md
-├── .gitignore
-├── sim/
-│   ├── imul/          # Integer multiplier models, RTL, tests, imul-sim
-│   ├── processor/     # Processor models, RTL, instruction tests, proc-sim
-│   ├── cache/         # Cache models, RTL, tests, mem-sim
-│   ├── multicore/     # Networks, integrated systems, tests, sys-sim
-│   ├── vc/            # Shared Verilog components and test utilities
-│   ├── conftest.py
-│   ├── pymtl.ini
-│   └── pytest.ini
-└── app/
-    ├── ece4750/       # Runtime and support library
-    ├── simple/        # Small C examples
-    ├── ubmark/        # Single-threaded benchmarks
-    ├── mtbmark/       # Multithreaded benchmarks
-    └── ...            # Autoconf build files and toolchain scripts
-```
-
-The four projects share imports and Verilog includes, so keep the `sim/` tree together. Generated simulator output, native build directories, caches, and the original Git history are excluded from this curated repository.
-
-## Simulation and testing
-
-The original course environment supplies Python with PyMTL3 and pytest, plus Verilator and a C++ toolchain for RTL simulation. Building TinyRV2 application binaries also requires a compatible RISC-V cross compiler. Exact dependency versions were not recorded in the source; the original course environment is the best starting point.
-
-Run from a separate build directory so generated simulation files stay out of the source tree:
+Use an environment with **Python, PyMTL3, pytest, Verilator, and a C++ compiler**. Exact dependency versions are not pinned in this repository. In that environment:
 
 ```bash
+git clone https://github.com/hn347/tinyriscv-projects.git
+cd tinyriscv-projects
 mkdir -p sim/build
 cd sim/build
 
-# Run the existing project suites
-python -m pytest ../imul
-python -m pytest ../processor
-python -m pytest ../cache
-python -m pytest ../multicore
+# Run the alternative multiplier's existing tests
+python -m pytest ../imul/test/IntMulAlt_test.py
 
-# Compare multiplier implementations
+# Compare multiplication cycle statistics on the same input set
 python ../imul/imul-sim --impl base --input small --stats
 python ../imul/imul-sim --impl alt --input small --stats
-
-# Run an assembly microbenchmark on the alternative processor
-python ../processor/proc-sim --impl alt --input vvadd-unopt --verify --stats
-
-# Exercise the alternative cache
-python ../cache/mem-sim --impl alt --input loop1 --stats
 ```
 
-`sys-sim` consumes a TinyRV2 ELF binary, rather than the assembly input names used by `proc-sim`. It supports `score-fl`, `mcore-fl`, `base`, and `alt` implementations. Run each simulator with `--help` in the configured environment for its options.
-
-**Validation status:** The curated copy passed Python syntax checks and static checks of renamed package references and active Verilog include paths. Hardware simulations and the 49 existing test modules have not been rerun for this copy. No performance improvement or passing-test claim is implied by the presence of baseline/alternative designs.
-
-## Credits
-
-Developed by **Helen Ni and Selena Zhang** for **Cornell ECE 4750, Fall 2025**, as recorded in the original repository. The project includes course-provided infrastructure and support code; existing source attribution is preserved, including simulator credits to Christopher Batten and Shunning Jiang.
-
-The folders were renamed from their original numbered assignment names to describe their architectural roles. This is a curated presentation of the coursework and its supporting framework. No new license has been applied to the inherited source.
+See [Simulation and testing](docs/SIMULATION.md) for all four test suites, processor/cache examples, system simulation requirements, and toolchain notes.
