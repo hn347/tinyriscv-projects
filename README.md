@@ -4,7 +4,7 @@
 
 Built with **Verilog/SystemVerilog · Python · PyMTL3 · pytest**
 
-Developed by Helen Ni and Selena Zhang.
+Developed by Helen Ni and Selena Zhang
 
 ## Overview
 
