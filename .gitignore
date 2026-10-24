@@ -1,0 +1,18 @@
+# Local environments and generated simulation/build artifacts
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+sim/build/
+app/build*/
+app/autom4te.cache/
+obj_dir*/
+*.vcd
+*.fst
+*.o
+*.so
+*.a
+*_pickled.*
+*__pickled.v
+pymtl_import_config_*.json
